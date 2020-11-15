@@ -28,6 +28,7 @@ contract FlightSuretyData {
         uint8 statusCode;
         uint256 updatedTimestamp;
         address airline;
+        mapping(address => bool) passengers;
     }
 
     mapping(bytes32 => Flight) private flights;
@@ -38,6 +39,7 @@ contract FlightSuretyData {
 
     event AirlineRegistered(address account);
     event AirlineApproved(address account);
+    event RegisterFlight(bytes32 flightKey);
 
     /**
      * @dev Constructor
@@ -195,6 +197,8 @@ contract FlightSuretyData {
             updatedTimestamp: timestamp,
             airline: airline
         });
+
+        emit RegisterFlight(flightKey);
     }
 
     /**
@@ -202,8 +206,9 @@ contract FlightSuretyData {
      *
      */
 
-    function buy(string flightKey, address passenger) external pure {
-        
+    function buy(bytes32 flightKey, address passenger) public requireIsOperational isAuthorized {
+        require(flights[flightKey].isRegistered == true, "FlightSuretyData/flight-not-registered");
+        flights[flightKey].passengers[passenger] = true;
     }
 
     /**

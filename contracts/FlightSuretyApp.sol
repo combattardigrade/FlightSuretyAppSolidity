@@ -44,6 +44,8 @@ interface FlightSuretyDataInterface {
         uint256 timestamp,
         address airline
     ) public;
+
+    function buy(bytes32 flightKey, address passenger) public payable;
 }
 
 /************************************************** */
@@ -230,7 +232,7 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             "FlightSuretyApp/airline-already-paid-fee"
         );
         require(msg.value >= 10 ether, "FlightSuretyApp/insufficient-amount");
-        flightSuretyData.fund(airline);
+        flightSuretyData.fund.value(msg.value)(airline);
     }
 
     /**
@@ -252,6 +254,23 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             timestamp,
             msg.sender
         );
+    }
+
+    /**
+     * @dev Buy flight
+     */
+    function buy(
+        address airline,
+        string memory flight,
+        uint256 timestamp
+    ) public payable {
+        require(msg.value <= 1 ether, "FlightSuretyApp/insufficient-amount");
+        bytes32 flightKey = flightSuretyData.getFlightKey(
+            msg.sender,
+            flight,
+            timestamp
+        );
+        flightSuretyData.buy.value(msg.value)(flightKey, msg.sender);
     }
 
     /**
