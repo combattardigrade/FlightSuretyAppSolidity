@@ -17,11 +17,20 @@ contract FlightSuretyData {
     mapping(address => bool) authorizedAccounts;
 
     struct Airline {
-        bool registered;        
+        bool registered;
         bool registrationFeePaid;
         uint256 votes;
         mapping(address => bool) voters;
     }
+
+    struct Flight {
+        bool isRegistered;
+        uint8 statusCode;
+        uint256 updatedTimestamp;
+        address airline;
+    }
+
+    mapping(bytes32 => Flight) private flights;
 
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
@@ -37,7 +46,7 @@ contract FlightSuretyData {
     constructor() public {
         contractOwner = msg.sender;
         airlines[msg.sender] = Airline({
-            registered: true,            
+            registered: true,
             registrationFeePaid: true,
             votes: 0
         });
@@ -69,11 +78,14 @@ contract FlightSuretyData {
         _;
     }
 
-    /** 
+    /**
      * @dev Modifier that requires msg.sender to be authorized
      */
     modifier isAuthorized() {
-        require(authorizedAccounts[msg.sender] == true, "FlightSuretyData/caller-not-authorized");
+        require(
+            authorizedAccounts[msg.sender] == true,
+            "FlightSuretyData/caller-not-authorized"
+        );
         _;
     }
 
@@ -106,9 +118,9 @@ contract FlightSuretyData {
     /********************************************************************************************/
 
     /**
-     * @dev Check Airline Vote 
+     * @dev Check Airline Vote
      */
-    function checkVote(address airline, address voter) public returns (bool) {        
+    function checkVote(address airline, address voter) public returns (bool) {
         return airlines[airline].voters[voter];
     }
 
@@ -123,17 +135,17 @@ contract FlightSuretyData {
     /**
      * @dev Get Airline data
      */
-    function getAirline(address account) 
-    public returns(
-        bool, bool, uint256
-    ) {
-        Airline memory airline = airlines[account];        
-        return(airline.registered, airline.registrationFeePaid, airline.votes);
+    function getAirline(address account)
+        public
+        returns (
+            bool,
+            bool,
+            uint256
+        )
+    {
+        Airline memory airline = airlines[account];
+        return (airline.registered, airline.registrationFeePaid, airline.votes);
     }
-
-    /**
-     * @dev Check if airline is registered
-     */
 
     /**
      * @dev Add an airline to the registration queue
@@ -143,7 +155,7 @@ contract FlightSuretyData {
 
     function registerAirline(
         address account,
-        bool registered,        
+        bool registered,
         bool registrationFeePaid,
         uint256 votes
     ) external requireIsOperational isAuthorized {
@@ -153,12 +165,36 @@ contract FlightSuretyData {
         );
 
         airlines[account] = Airline({
-            registered: registered,            
+            registered: registered,
             registrationFeePaid: registrationFeePaid,
-            votes: votes      
+            votes: votes
         });
 
         emit AirlineRegistered(account);
+    }
+
+    /**
+     * @dev Register Flight
+     */
+    function registerFlight(
+        bytes32 flightKey,
+        uint8 statusCode,
+        uint256 timestamp,
+        address airline
+    ) public requireIsOperational isAuthorized {
+        require(
+            flights[flightKey].isRegistered == true,
+            "FlightSuretyData/flight-already-registered"
+        );
+        require(airlines[airline].registered == true, "FlightSuretyData/airline-not-registered");
+        require(airlines[airline].registrationFeePaid == true, "FlightSuretyData/airline-registration-fee-not-paid");
+
+        flights[flightKey] = Flight({
+            isRegistered: true,
+            statusCode: statusCode,
+            updatedTimestamp: timestamp,
+            airline: airline
+        });
     }
 
     /**
@@ -166,7 +202,9 @@ contract FlightSuretyData {
      *
      */
 
-    function buy() external payable {}
+    function buy(string flightKey, address passenger) external pure {
+        
+    }
 
     /**
      *  @dev Credits payouts to insurees
@@ -185,13 +223,15 @@ contract FlightSuretyData {
      *
      */
 
-    function fund() public payable {}
+    function fund(address airline) public payable requireIsOperational isAuthorized {
+        airlines[airline].registrationFeePaid = true;
+    }
 
     function getFlightKey(
         address airline,
         string memory flight,
         uint256 timestamp
-    ) internal pure returns (bytes32) {
+    ) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(airline, flight, timestamp));
     }
 
@@ -199,7 +239,5 @@ contract FlightSuretyData {
      * @dev Fallback function for funding smart contract.
      *
      */
-    function() external payable {
-        fund();
-    }
+    function() external payable {}
 }

@@ -17,6 +17,8 @@ interface FlightSuretyDataInterface {
             uint256
         );
 
+    function isOperational() public view returns (bool);
+
     function registerAirline(
         address account,
         bool registered,
@@ -25,7 +27,23 @@ interface FlightSuretyDataInterface {
     ) public;
 
     function checkVote(address airline, address votes) public returns (bool);
+
     function voteForAirline(address airline) public;
+
+    function fund(address airline) public payable;
+
+    function getFlightKey(
+        address airline,
+        string memory flight,
+        uint256 timestamp
+    ) public pure returns (bytes32);
+
+    function registerFlight(
+        bytes32 flightKey,
+        uint256 statusCode,
+        uint256 timestamp,
+        address airline
+    ) public;
 }
 
 /************************************************** */
@@ -49,14 +67,6 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
 
     address private contractOwner; // Account used to deploy contract
 
-    struct Flight {
-        bool isRegistered;
-        uint8 statusCode;
-        uint256 updatedTimestamp;
-        address airline;
-    }
-    mapping(bytes32 => Flight) private flights;
-
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
     /********************************************************************************************/
@@ -71,7 +81,8 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
      */
     modifier requireIsOperational() {
         // Modify to call data contract's status
-        require(true, "Contract is currently not operational");
+        bool isOperational = flightSuretyData.isOperational();
+        require(isOperational == true, "Contract is currently not operational");
         _; // All modifiers require an "_" which indicates where the function body will be added
     }
 
@@ -99,8 +110,8 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
 
-    function isOperational() public pure returns (bool) {
-        return true; // Modify to call data contract's status
+    function isOperational() public view returns (bool) {
+        return flightSuretyData.isOperational();
     }
 
     /********************************************************************************************/
@@ -114,8 +125,9 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
 
     function registerAirline(address account)
         external
+        requireIsOperational
         returns (bool success, uint256 votes)
-    {        
+    {
         // Get Total Airlines
         uint256 totalAirlines = flightSuretyData.totalAirlines();
 
@@ -130,59 +142,117 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
         uint256 newAirlineVotes;
 
         // Get Sender Data
-        (senderIsRegistered, senderPaidFee, senderVotes) = flightSuretyData.getAirline(msg.sender);
+        (senderIsRegistered, senderPaidFee, senderVotes) = flightSuretyData
+            .getAirline(msg.sender);
 
         // Get New Airline Data
-        (newAirlineIsRegistered, newAirlinePaidFee, newAirlineVotes) = flightSuretyData.getAirline(account);
-             
+        (
+            newAirlineIsRegistered,
+            newAirlinePaidFee,
+            newAirlineVotes
+        ) = flightSuretyData.getAirline(account);
+
         // Check if Sender is registered & paid fee
-        require(senderIsRegistered == true, "FlightSuretyApp/sender-not-registered");
-        require(senderPaidFee == true, "FlightSuretyApp/sender-missing-fee-payment");
+        require(
+            senderIsRegistered == true,
+            "FlightSuretyApp/sender-not-registered"
+        );
+        require(
+            senderPaidFee == true,
+            "FlightSuretyApp/sender-missing-fee-payment"
+        );
 
         // Check if newAirline is already registered
-        require(newAirlineIsRegistered == true, "FlightSuretyApp/new-airline-already-registered");
+        require(
+            newAirlineIsRegistered == true,
+            "FlightSuretyApp/new-airline-already-registered"
+        );
 
         if (totalAirlines < 5) {
-            
-            flightSuretyData.registerAirline(account, true, false, 0);   
+            flightSuretyData.registerAirline(account, true, false, 0);
             success = true;
-            votes = 0;    
-
-        } else {           
-
+            votes = 0;
+        } else {
             // Check if sender has already votes
             bool senderVoted = flightSuretyData.checkVote(account, msg.sender);
-            require(senderVoted == true, "FlightSuretyApp/sender-already-voted");
-            
-            // Vote for new airline            
+            require(
+                senderVoted == true,
+                "FlightSuretyApp/sender-already-voted"
+            );
+
+            // Vote for new airline
             newAirlineVotes = newAirlineVotes + 1;
 
             // Get Min Votes needed
             uint256 halfVotes = totalAirlines.mul(100).div(2);
-            
+
             // If it has votes needed register airline
-            if(newAirlineVotes.mul(100) > halfVotes) {
-                flightSuretyData.registerAirline(account, true, false, newAirlineVotes-1);
+            if (newAirlineVotes.mul(100) > halfVotes) {
+                flightSuretyData.registerAirline(
+                    account,
+                    true,
+                    false,
+                    newAirlineVotes - 1
+                );
                 flightSuretyData.voteForAirline(account);
                 success = true;
                 votes = newAirlineVotes;
-            } else {                
-                flightSuretyData.registerAirline(account, false, false, 0);   
+            } else {
+                flightSuretyData.registerAirline(account, false, false, 0);
                 flightSuretyData.voteForAirline(account);
                 success = false;
                 votes = newAirlineVotes;
-            }            
+            }
         }
-        
+
         return (success, votes);
+    }
+
+    /**
+     * @dev Pay Arline Registration Fee
+     */
+    function payRegistrationFee(address airline)
+        public
+        payable
+        requireIsOperational
+    {
+        bool airlineIsRegistered;
+        bool airlinePaidFee;
+        uint256 airlineVotes;
+        (airlineIsRegistered, airlinePaidFee, airlineVotes) = flightSuretyData
+            .getAirline(airline);
+        require(
+            airlineIsRegistered == true,
+            "FlightSuretyApp/airline-not-registered"
+        );
+        require(
+            airlinePaidFee == false,
+            "FlightSuretyApp/airline-already-paid-fee"
+        );
+        require(msg.value >= 10 ether, "FlightSuretyApp/insufficient-amount");
+        flightSuretyData.fund(airline);
     }
 
     /**
      * @dev Register a future flight for insuring.
      *
      */
-
-    function registerFlight() external pure {}
+    function registerFlight(string memory flight, uint256 timestamp)
+        public
+        requireIsOperational
+    {
+        bytes32 flightKey = flightSuretyData.getFlightKey(
+            msg.sender,
+            flight,
+            timestamp
+        );
+        flightSuretyData.registerFlight(
+            flightKey,
+            STATUS_CODE_UNKNOWN,
+            timestamp,
+            msg.sender
+        );
+    }
 
     /**
      * @dev Called after oracle has updated flight status
@@ -331,14 +401,6 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             // Handle flight status as appropriate
             processFlightStatus(airline, flight, timestamp, statusCode);
         }
-    }
-
-    function getFlightKey(
-        address airline,
-        string flight,
-        uint256 timestamp
-    ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(airline, flight, timestamp));
     }
 
     // Returns array of three non-duplicating integers from 0-9
