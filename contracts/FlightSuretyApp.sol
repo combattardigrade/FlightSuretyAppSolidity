@@ -17,6 +17,16 @@ interface FlightSuretyDataInterface {
             uint256
         );
 
+    function getFlight(bytes32 flightKey)
+        public
+        returns (
+            bool,
+            uint8,
+            uint256,
+            address,
+            uint256
+        );
+
     function isOperational() public view returns (bool);
 
     function registerAirline(
@@ -42,10 +52,17 @@ interface FlightSuretyDataInterface {
         bytes32 flightKey,
         uint256 statusCode,
         uint256 timestamp,
-        address airline
+        address airline,
+        uint256 price
     ) public;
 
     function buy(bytes32 flightKey, address passenger) public payable;
+
+    function pay(address passenger) public;
+
+    function updateFlightStatus(bytes32 flightKey, uint8 statusCode) public;
+
+    function creditInsurees(bytes32 flightKey) public;
 }
 
 /************************************************** */
@@ -239,10 +256,11 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
      * @dev Register a future flight for insuring.
      *
      */
-    function registerFlight(string memory flight, uint256 timestamp)
-        public
-        requireIsOperational
-    {
+    function registerFlight(
+        string memory flight,
+        uint256 timestamp,
+        uint256 price
+    ) public requireIsOperational {
         bytes32 flightKey = flightSuretyData.getFlightKey(
             msg.sender,
             flight,
@@ -252,25 +270,51 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             flightKey,
             STATUS_CODE_UNKNOWN,
             timestamp,
-            msg.sender
+            msg.sender,
+            price
         );
     }
 
     /**
      * @dev Buy flight
      */
-    function buy(
-        address airline,
-        string memory flight,
-        uint256 timestamp
-    ) public payable {
+    function buy(string memory flight, uint256 timestamp)
+        public
+        payable
+        requireIsOperational
+    {
         require(msg.value <= 1 ether, "FlightSuretyApp/insufficient-amount");
         bytes32 flightKey = flightSuretyData.getFlightKey(
             msg.sender,
             flight,
             timestamp
         );
+        var (
+            isRegistered,
+            statusCode,
+            updatedTimestamp,
+            airline,
+            price
+        ) = flightSuretyData.getFlight(flightKey);
+        require(msg.value >= price, "FlightSuretyApp/insufficient-amount");
         flightSuretyData.buy.value(msg.value)(flightKey, msg.sender);
+    }
+
+    function creditInsurees(
+        string memory flight,
+        uint256 timestamp,
+        uint256 price
+    ) public requireIsOperational {
+        bytes32 flightKey = flightSuretyData.getFlightKey(
+            msg.sender,
+            flight,
+            timestamp
+        );
+        flightSuretyData.creditInsurees(flightKey);
+    }
+
+    function pay() public requireIsOperational {
+        flightSuretyData.pay(msg.sender);
     }
 
     /**
@@ -283,7 +327,14 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
         string memory flight,
         uint256 timestamp,
         uint8 statusCode
-    ) internal pure {}
+    ) internal {
+        bytes32 flightKey = flightSuretyData.getFlightKey(
+            msg.sender,
+            flight,
+            timestamp
+        );
+        flightSuretyData.updateFlightStatus(flightKey, statusCode);
+    }
 
     // Generate a request for oracles to fetch flight information
     function fetchFlightStatus(
