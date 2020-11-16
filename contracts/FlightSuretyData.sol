@@ -118,6 +118,10 @@ contract FlightSuretyData {
 
     function setOperatingStatus(bool mode) external requireContractOwner {
         operational = mode;
+    }    
+
+    function authorizeAccount(address account) external requireContractOwner {
+        authorizedAccounts[account] = true;
     }
 
     /********************************************************************************************/
@@ -127,15 +131,14 @@ contract FlightSuretyData {
     /**
      * @dev Check Airline Vote
      */
-    function checkVote(address airline, address voter) public returns (bool) {
+    function checkVote(address airline, address voter) public view returns (bool) {
         return airlines[airline].voters[voter];
     }
 
     /**
      * @dev Vote for airline approval
      */
-    function voteForAirline(address airline) public {
-        airlines[airline].votes = airlines[airline].votes + 1;
+    function voteForAirline(address airline) public {        
         airlines[airline].voters[msg.sender] = true;
     }
 
@@ -144,6 +147,7 @@ contract FlightSuretyData {
      */
     function getAirline(address account)
         public
+        view
         returns (
             bool,
             bool,
@@ -153,18 +157,14 @@ contract FlightSuretyData {
         Airline memory airline = airlines[account];
         return (airline.registered, airline.registrationFeePaid, airline.votes);
     }
-
-    bool isRegistered;
-    uint8 statusCode;
-    uint256 updatedTimestamp;
-    address airline;
-    uint256 price;
+    
 
     /**
      * @dev Get Flight details
      */
     function getFlight(bytes32 flightKey)
         public
+        view
         returns (
             bool isRegistered,
             uint8 statusCode,
@@ -193,7 +193,7 @@ contract FlightSuretyData {
         uint256 votes
     ) external requireIsOperational isAuthorized {
         require(
-            airlines[account].registered == true,
+            airlines[account].registered == false,
             "FlightSuretyData/airline-already-registered"
         );
 
@@ -202,6 +202,8 @@ contract FlightSuretyData {
             registrationFeePaid: registrationFeePaid,
             votes: votes
         });
+        
+        totalAirlines = totalAirlines + 1;
 
         emit AirlineRegistered(account);
     }
@@ -332,6 +334,7 @@ contract FlightSuretyData {
     {
         flights[flightKey].statusCode = statusCode;
     }
+    
 
     /**
      * @dev Fallback function for funding smart contract.

@@ -6,75 +6,16 @@ pragma solidity ^0.4.24;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
-interface FlightSuretyDataInterface {
-    function totalAirlines() public returns (uint256);
-
-    function getAirline(address account)
-        public
-        returns (
-            bool,
-            bool,
-            uint256
-        );
-
-    function getFlight(bytes32 flightKey)
-        public
-        returns (
-            bool,
-            uint8,
-            uint256,
-            address,
-            uint256
-        );
-
-    function isOperational() public view returns (bool);
-
-    function registerAirline(
-        address account,
-        bool registered,
-        bool registrationFeePaid,
-        uint256 votes
-    ) public;
-
-    function checkVote(address airline, address votes) public returns (bool);
-
-    function voteForAirline(address airline) public;
-
-    function fund(address airline) public payable;
-
-    function getFlightKey(
-        address airline,
-        string memory flight,
-        uint256 timestamp
-    ) public pure returns (bytes32);
-
-    function registerFlight(
-        bytes32 flightKey,
-        uint256 statusCode,
-        uint256 timestamp,
-        address airline,
-        uint256 price
-    ) public;
-
-    function buy(bytes32 flightKey, address passenger) public payable;
-
-    function pay(address passenger) public;
-
-    function updateFlightStatus(bytes32 flightKey, uint8 statusCode) public;
-
-    function creditInsurees(bytes32 flightKey) public;
-}
-
 /************************************************** */
 /* FlightSurety Smart Contract                      */
 /************************************************** */
-contract FlightSuretyApp is FlightSuretyDataInterface {
+contract FlightSuretyApp {
     using SafeMath for uint256; // Allow SafeMath functions to be called for all uint256 types (similar to "prototype" in Javascript)
 
     /********************************************************************************************/
     /*                                       DATA VARIABLES                                     */
     /********************************************************************************************/
-    FlightSuretyDataInterface flightSuretyData;
+    FlightSuretyData flightSuretyData;
 
     // Flight status codees
     uint8 private constant STATUS_CODE_UNKNOWN = 0;
@@ -121,8 +62,9 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
      * @dev Contract constructor
      *
      */
-    constructor() public {
+    constructor(address contractAddress) public {
         contractOwner = msg.sender;
+        flightSuretyData = FlightSuretyData(contractAddress);
     }
 
     /********************************************************************************************/
@@ -176,14 +118,15 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             senderIsRegistered == true,
             "FlightSuretyApp/sender-not-registered"
         );
+
         require(
             senderPaidFee == true,
-            "FlightSuretyApp/sender-missing-fee-payment"
+            "FlightSuretyApp/registration-fee-not-paid"
         );
 
         // Check if newAirline is already registered
         require(
-            newAirlineIsRegistered == true,
+            newAirlineIsRegistered == false,
             "FlightSuretyApp/new-airline-already-registered"
         );
 
@@ -195,7 +138,7 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             // Check if sender has already votes
             bool senderVoted = flightSuretyData.checkVote(account, msg.sender);
             require(
-                senderVoted == true,
+                senderVoted == false,
                 "FlightSuretyApp/sender-already-voted"
             );
 
@@ -211,13 +154,13 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
                     account,
                     true,
                     false,
-                    newAirlineVotes - 1
+                    newAirlineVotes
                 );
                 flightSuretyData.voteForAirline(account);
                 success = true;
                 votes = newAirlineVotes;
             } else {
-                flightSuretyData.registerAirline(account, false, false, 0);
+                flightSuretyData.registerAirline(account, false, false, newAirlineVotes);
                 flightSuretyData.voteForAirline(account);
                 success = false;
                 votes = newAirlineVotes;
@@ -261,7 +204,7 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
         uint256 timestamp,
         uint256 price
     ) public requireIsOperational {
-        bytes32 flightKey = flightSuretyData.getFlightKey(
+        bytes32 flightKey = getFlightKey(
             msg.sender,
             flight,
             timestamp
@@ -284,7 +227,7 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
         requireIsOperational
     {
         require(msg.value <= 1 ether, "FlightSuretyApp/insufficient-amount");
-        bytes32 flightKey = flightSuretyData.getFlightKey(
+        bytes32 flightKey = getFlightKey(
             msg.sender,
             flight,
             timestamp
@@ -300,12 +243,11 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
         flightSuretyData.buy.value(msg.value)(flightKey, msg.sender);
     }
 
-    function creditInsurees(
-        string memory flight,
-        uint256 timestamp,
-        uint256 price
-    ) public requireIsOperational {
-        bytes32 flightKey = flightSuretyData.getFlightKey(
+    function creditInsurees(string memory flight, uint256 timestamp)
+        public
+        requireIsOperational
+    {
+        bytes32 flightKey = getFlightKey(
             msg.sender,
             flight,
             timestamp
@@ -323,12 +265,11 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
      */
 
     function processFlightStatus(
-        address airline,
         string memory flight,
         uint256 timestamp,
         uint8 statusCode
     ) internal {
-        bytes32 flightKey = flightSuretyData.getFlightKey(
+        bytes32 flightKey = getFlightKey(
             msg.sender,
             flight,
             timestamp
@@ -469,8 +410,16 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
             emit FlightStatusInfo(airline, flight, timestamp, statusCode);
 
             // Handle flight status as appropriate
-            processFlightStatus(airline, flight, timestamp, statusCode);
+            processFlightStatus(flight, timestamp, statusCode);
         }
+    }
+
+    function getFlightKey(
+        address airline,
+        string memory flight,
+        uint256 timestamp
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(airline, flight, timestamp));
     }
 
     // Returns array of three non-duplicating integers from 0-9
@@ -512,4 +461,57 @@ contract FlightSuretyApp is FlightSuretyDataInterface {
     }
 
     // endregion
+}
+
+contract FlightSuretyData {
+    function totalAirlines() external returns (uint256);
+
+    function getAirline(address account)
+        external
+        returns (
+            bool,
+            bool,
+            uint256
+        );
+
+    function getFlight(bytes32 flightKey)
+        external
+        returns (
+            bool,
+            uint8,
+            uint256,
+            address,
+            uint256
+        );
+
+    function isOperational() external view returns (bool);
+
+    function registerAirline(
+        address account,
+        bool registered,
+        bool registrationFeePaid,
+        uint256 votes
+    ) external;
+
+    function checkVote(address airline, address votes) external returns (bool);
+
+    function voteForAirline(address airline) external;
+
+    function fund(address airline) external payable;    
+
+    function registerFlight(
+        bytes32 flightKey,
+        uint256 statusCode,
+        uint256 timestamp,
+        address airline,
+        uint256 price
+    ) external;
+
+    function buy(bytes32 flightKey, address passenger) external payable;
+
+    function pay(address passenger) external;
+
+    function updateFlightStatus(bytes32 flightKey, uint8 statusCode) external;
+
+    function creditInsurees(bytes32 flightKey) external;
 }
