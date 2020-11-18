@@ -45,6 +45,7 @@ contract FlightSuretyData {
     event RegisterFlight(bytes32 flightKey);
     event InsureesCredites(bytes32 flightKey);
     event Pay(address passenger);
+    event FlightStatusUpdated(bytes32 flightKey, uint8 status);
 
     /**
      * @dev Constructor
@@ -118,7 +119,7 @@ contract FlightSuretyData {
 
     function setOperatingStatus(bool mode) external requireContractOwner {
         operational = mode;
-    }    
+    }
 
     function authorizeAccount(address account) external requireContractOwner {
         authorizedAccounts[account] = true;
@@ -131,14 +132,18 @@ contract FlightSuretyData {
     /**
      * @dev Check Airline Vote
      */
-    function checkVote(address airline, address voter) public view returns (bool) {
+    function checkVote(address airline, address voter)
+        public
+        view
+        returns (bool)
+    {
         return airlines[airline].voters[voter];
     }
 
     /**
      * @dev Vote for airline approval
      */
-    function voteForAirline(address airline) public {        
+    function voteForAirline(address airline) public {
         airlines[airline].voters[msg.sender] = true;
     }
 
@@ -157,7 +162,6 @@ contract FlightSuretyData {
         Airline memory airline = airlines[account];
         return (airline.registered, airline.registrationFeePaid, airline.votes);
     }
-    
 
     /**
      * @dev Get Flight details
@@ -202,7 +206,7 @@ contract FlightSuretyData {
             registrationFeePaid: registrationFeePaid,
             votes: votes
         });
-        
+
         totalAirlines = totalAirlines + 1;
 
         emit AirlineRegistered(account);
@@ -219,7 +223,7 @@ contract FlightSuretyData {
         uint256 price
     ) public requireIsOperational isAuthorized {
         require(
-            flights[flightKey].isRegistered == true,
+            flights[flightKey].isRegistered == false,
             "FlightSuretyData/flight-already-registered"
         );
         require(
@@ -230,7 +234,7 @@ contract FlightSuretyData {
             airlines[airline].registrationFeePaid == true,
             "FlightSuretyData/airline-registration-fee-not-paid"
         );
-        require(price > 0, "FlightSuretyData/invalid-price");
+        // require(price > 0, "FlightSuretyData/invalid-price");
 
         flights[flightKey] = Flight({
             isRegistered: true,
@@ -292,11 +296,7 @@ contract FlightSuretyData {
      *  @dev Transfers eligible payout funds to insuree
      *
      */
-    function pay(address passenger)
-        public
-        requireIsOperational
-        isAuthorized
-    {
+    function pay(address passenger) public requireIsOperational isAuthorized {
         uint256 amount = insureesCredit[passenger];
         require(amount > 0, "FlightSuretyData/insufficient-balance");
         insureesCredit[passenger] = 0;
@@ -333,8 +333,8 @@ contract FlightSuretyData {
         isAuthorized
     {
         flights[flightKey].statusCode = statusCode;
+        emit FlightStatusUpdated(flightKey, statusCode);
     }
-    
 
     /**
      * @dev Fallback function for funding smart contract.

@@ -1,4 +1,5 @@
 import FlightSuretyApp from '../../build/contracts/FlightSuretyApp.json';
+import FlightSuretyData from '../../build/contracts/FlightSuretyData.json'
 import Config from './config.json';
 import Web3 from 'web3';
 import express from 'express';
@@ -8,7 +9,7 @@ let config = Config['localhost'];
 let web3 = new Web3(new Web3.providers.WebsocketProvider(config.url.replace('http', 'ws')));
 web3.eth.defaultAccount = web3.eth.accounts[0];
 let flightSuretyApp = new web3.eth.Contract(FlightSuretyApp.abi, config.appAddress);
-
+let flightSuretyData = new web3.eth.Contract(FlightSuretyData.abi, config.dataAddress);
 
 const start = async () => {
   const oracles = []
@@ -22,7 +23,7 @@ const start = async () => {
       const flight = data.returnValues.flight
       const timestamp = data.returnValues.timestamp
       console.log(`flight: ${flight}, airline: ${airline}, time: ${timestamp}`)
-      
+
 
       for (let oracle of oracles) {
         const oracleIndexes = await flightSuretyApp.methods.getMyIndexes().call({
@@ -51,6 +52,12 @@ const start = async () => {
           }
         }
       }
+    })
+
+  flightSuretyData.events.FlightStatusUpdated()
+    .on('error', error => { console.log(error) })
+    .on('data', async (data) => {
+      console.log(data)
     })
 
   for (let account of accounts.slice()) {
